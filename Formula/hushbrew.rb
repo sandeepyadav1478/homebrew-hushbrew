@@ -10,8 +10,15 @@ class Hushbrew < Formula
   license "MIT"
   head "https://github.com/sandeepyadav1478/homebrew-hushbrew.git", branch: "main"
 
-  # hushbrew requires GNU timeout from coreutils
+  # hushbrew is macOS-specific (uses pmset, osascript, ioreg, LaunchAgent)
+  depends_on :macos
+  # Requires GNU timeout from coreutils
   depends_on "coreutils"
+
+  livecheck do
+    url :stable
+    strategy :github_latest
+  end
 
   def install
     # Install scripts to libexec
@@ -52,10 +59,13 @@ class Hushbrew < Formula
     EOS
   end
 
+  # Note: Use 'hushbrew start' instead of 'brew services start' for calendar-based scheduling
   service do
     run opt_libexec/"hushbrew.sh"
     working_dir Dir.home
     keep_alive false
+    log_path var/"log/hushbrew.log"
+    error_log_path var/"log/hushbrew.log"
   end
 
   def post_uninstall
@@ -88,6 +98,11 @@ class Hushbrew < Formula
     # Test that scripts have valid syntax
     system "bash", "-n", opt_libexec/"hushbrew.sh"
     system "bash", "-n", opt_libexec/"brew-curl"
+    system "bash", "-n", opt_libexec/"hushbrew-setup"
+
+    # Verify main command works
+    assert_match "hushbrew v", shell_output("#{bin}/hushbrew version")
+    assert_match "Automatic Homebrew upgrades", shell_output("#{bin}/hushbrew help")
 
     # Verify plist template exists
     assert_predicate opt_libexec/"launchd/com.local.hushbrew.plist", :exist?
@@ -96,5 +111,11 @@ class Hushbrew < Formula
     plist_content = (opt_libexec/"launchd/com.local.hushbrew.plist").read
     assert_match "__HOME__", plist_content
     assert_match "StartCalendarInterval", plist_content
+
+    # Verify all required scripts are executable
+    assert_predicate opt_libexec/"hushbrew.sh", :executable?
+    assert_predicate opt_libexec/"brew-curl", :executable?
+    assert_predicate opt_libexec/"hushbrew-setup", :executable?
+    assert_predicate bin/"hushbrew", :executable?
   end
 end
