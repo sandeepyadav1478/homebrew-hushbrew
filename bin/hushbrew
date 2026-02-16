@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.4"
+VERSION="1.1.0"
 
 # Colors for output
 RED='\033[0;31m'
@@ -180,16 +180,54 @@ cmd_status() {
 }
 
 cmd_logs() {
-    if [ -f "$HOME/.local/log/hushbrew.log" ]; then
-        if [ "${1:-}" = "-f" ] || [ "${1:-}" = "--follow" ]; then
-            tail -f "$HOME/.local/log/hushbrew.log"
-        else
-            tail -50 "$HOME/.local/log/hushbrew.log"
-        fi
-    else
-        echo -e "${YELLOW}No log file found yet${NC}"
-        echo "Log will be created at: ~/.local/log/hushbrew.log"
-    fi
+    local log_file="$HOME/.local/log/hushbrew.log"
+
+    case "${1:-}" in
+        -f|--follow)
+            if [ -f "$log_file" ]; then
+                tail -f "$log_file"
+            else
+                echo -e "${YELLOW}No log file found yet${NC}"
+                echo "Log will be created at: $log_file"
+            fi
+            ;;
+        --clear)
+            if [ -f "$log_file" ]; then
+                > "$log_file"
+                rm -f "$HOME/.local/log/hushbrew.log.old"
+                echo -e "${GREEN}✓${NC} Logs cleared"
+            else
+                echo -e "${YELLOW}No log file to clear${NC}"
+            fi
+            ;;
+        --last)
+            if [ -f "$log_file" ]; then
+                # Find the last "START:" line and print from there
+                local last_start=$(grep -n "| START:" "$log_file" | tail -1 | cut -d: -f1)
+                if [ -n "$last_start" ]; then
+                    tail -n +$last_start "$log_file"
+                else
+                    echo -e "${YELLOW}No completed runs found${NC}"
+                fi
+            else
+                echo -e "${YELLOW}No log file found yet${NC}"
+                echo "Log will be created at: $log_file"
+            fi
+            ;;
+        "")
+            if [ -f "$log_file" ]; then
+                tail -50 "$log_file"
+            else
+                echo -e "${YELLOW}No log file found yet${NC}"
+                echo "Log will be created at: $log_file"
+            fi
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown logs option: $1${NC}" >&2
+            echo "Usage: hushbrew logs [-f|--follow|--clear|--last]" >&2
+            exit 1
+            ;;
+    esac
 }
 
 cmd_run() {
@@ -203,35 +241,703 @@ cmd_run() {
     fi
 }
 
+cmd_config() {
+    local config_file="$HOME/.config/hushbrew/config"
+
+    if [ ! -f "$config_file" ]; then
+        echo -e "${RED}Error: Config file not found${NC}" >&2
+        echo "Run: hushbrew setup" >&2
+        exit 1
+    fi
+
+    case "${1:-}" in
+        edit)
+            ${EDITOR:-vi} "$config_file"
+            ;;
+        set)
+            cmd_config_set "${@:2}"
+            ;;
+        "")
+            echo -e "${BLUE}Current configuration:${NC}"
+            echo ""
+            cat "$config_file"
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown config command: $1${NC}" >&2
+            echo "Usage: hushbrew config [edit|set]" >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_config_set() {
+    local key="$1"
+    local value="$2"
+    local config_file="$HOME/.config/hushbrew/config"
+
+    if [ -z "$key" ] || [ -z "$value" ]; then
+        echo -e "${RED}Error: Missing arguments${NC}" >&2
+        echo "Usage: hushbrew config set <key> <value>" >&2
+        echo "" >&2
+        echo "Available settings:" >&2
+        echo "  bandwidth-limit <1-100>     - Bandwidth throttle percentage" >&2
+        echo "  battery-threshold <1-100>   - Battery threshold percentage" >&2
+        echo "  meeting-check <on|off>      - Toggle meeting detection" >&2
+        exit 1
+    fi
+
+    case "$key" in
+        bandwidth-limit)
+            if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 1 ] || [ "$value" -gt 100 ]; then
+                echo -e "${RED}Error: bandwidth-limit must be 1-100${NC}" >&2
+                exit 1
+            fi
+            # Add or update setting in config
+            if grep -q "^BANDWIDTH_LIMIT=" "$config_file" 2>/dev/null; then
+                sed -i.bak "s/^BANDWIDTH_LIMIT=.*/BANDWIDTH_LIMIT=\"$value\"/" "$config_file"
+                rm -f "$config_file.bak"
+            else
+                echo "" >> "$config_file"
+                echo "BANDWIDTH_LIMIT=\"$value\"" >> "$config_file"
+            fi
+            echo -e "${GREEN}✓${NC} Set bandwidth-limit to ${value}%"
+            ;;
+        battery-threshold)
+            if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 1 ] || [ "$value" -gt 100 ]; then
+                echo -e "${RED}Error: battery-threshold must be 1-100${NC}" >&2
+                exit 1
+            fi
+            if grep -q "^BATTERY_THRESHOLD=" "$config_file" 2>/dev/null; then
+                sed -i.bak "s/^BATTERY_THRESHOLD=.*/BATTERY_THRESHOLD=\"$value\"/" "$config_file"
+                rm -f "$config_file.bak"
+            else
+                echo "" >> "$config_file"
+                echo "BATTERY_THRESHOLD=\"$value\"" >> "$config_file"
+            fi
+            echo -e "${GREEN}✓${NC} Set battery-threshold to ${value}%"
+            ;;
+        meeting-check)
+            if [ "$value" != "on" ] && [ "$value" != "off" ]; then
+                echo -e "${RED}Error: meeting-check must be 'on' or 'off'${NC}" >&2
+                exit 1
+            fi
+            if grep -q "^MEETING_CHECK=" "$config_file" 2>/dev/null; then
+                sed -i.bak "s/^MEETING_CHECK=.*/MEETING_CHECK=\"$value\"/" "$config_file"
+                rm -f "$config_file.bak"
+            else
+                echo "" >> "$config_file"
+                echo "MEETING_CHECK=\"$value\"" >> "$config_file"
+            fi
+            echo -e "${GREEN}✓${NC} Set meeting-check to $value"
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown setting: $key${NC}" >&2
+            echo "Available settings: bandwidth-limit, battery-threshold, meeting-check" >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_exclude() {
+    local config_file="$HOME/.config/hushbrew/config"
+
+    if [ ! -f "$config_file" ]; then
+        echo -e "${RED}Error: Config file not found${NC}" >&2
+        echo "Run: hushbrew setup" >&2
+        exit 1
+    fi
+
+    case "${1:-}" in
+        add)
+            shift
+            cmd_exclude_add "$@"
+            ;;
+        remove)
+            shift
+            cmd_exclude_remove "$@"
+            ;;
+        list)
+            cmd_exclude_list
+            ;;
+        "")
+            cmd_exclude_list
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown exclude command: $1${NC}" >&2
+            echo "Usage: hushbrew exclude [add|remove|list]" >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_exclude_add() {
+    local is_cask=false
+    local package=""
+    local config_file="$HOME/.config/hushbrew/config"
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --cask)
+                is_cask=true
+                shift
+                ;;
+            *)
+                package="$1"
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$package" ]; then
+        echo -e "${RED}Error: Package name required${NC}" >&2
+        echo "Usage: hushbrew exclude add [--cask] <package>" >&2
+        exit 1
+    fi
+
+    if $is_cask; then
+        # Get current cask exclusions
+        local current=$(grep "^EXCLUDED_CASKS=" "$config_file" | sed 's/^EXCLUDED_CASKS="//' | sed 's/"$//')
+
+        # Check if already excluded
+        if echo "$current" | grep -qw "$package"; then
+            echo -e "${YELLOW}${package} is already in cask exclusion list${NC}"
+            return
+        fi
+
+        # Add to list
+        if [ -z "$current" ]; then
+            local new_value="$package"
+        else
+            local new_value="$current $package"
+        fi
+
+        sed -i.bak "s/^EXCLUDED_CASKS=.*/EXCLUDED_CASKS=\"$new_value\"/" "$config_file"
+        rm -f "$config_file.bak"
+        echo -e "${GREEN}✓${NC} Added $package to cask exclusion list"
+    else
+        # Get current formula exclusions
+        local current=$(grep "^EXCLUDED_FORMULAE=" "$config_file" | sed 's/^EXCLUDED_FORMULAE="//' | sed 's/"$//')
+
+        # Check if already excluded
+        if echo "$current" | grep -qw "$package"; then
+            echo -e "${YELLOW}${package} is already in formula exclusion list${NC}"
+            return
+        fi
+
+        # Add to list
+        if [ -z "$current" ]; then
+            local new_value="$package"
+        else
+            local new_value="$current $package"
+        fi
+
+        sed -i.bak "s/^EXCLUDED_FORMULAE=.*/EXCLUDED_FORMULAE=\"$new_value\"/" "$config_file"
+        rm -f "$config_file.bak"
+        echo -e "${GREEN}✓${NC} Added $package to formula exclusion list"
+    fi
+}
+
+cmd_exclude_remove() {
+    local is_cask=false
+    local package=""
+    local config_file="$HOME/.config/hushbrew/config"
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --cask)
+                is_cask=true
+                shift
+                ;;
+            *)
+                package="$1"
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$package" ]; then
+        echo -e "${RED}Error: Package name required${NC}" >&2
+        echo "Usage: hushbrew exclude remove [--cask] <package>" >&2
+        exit 1
+    fi
+
+    if $is_cask; then
+        # Get current cask exclusions
+        local current=$(grep "^EXCLUDED_CASKS=" "$config_file" | sed 's/^EXCLUDED_CASKS="//' | sed 's/"$//')
+
+        # Remove from list (word-by-word)
+        local new_value=""
+        for word in $current; do
+            if [ "$word" != "$package" ]; then
+                if [ -z "$new_value" ]; then
+                    new_value="$word"
+                else
+                    new_value="$new_value $word"
+                fi
+            fi
+        done
+
+        sed -i.bak "s/^EXCLUDED_CASKS=.*/EXCLUDED_CASKS=\"$new_value\"/" "$config_file"
+        rm -f "$config_file.bak"
+        echo -e "${GREEN}✓${NC} Removed $package from cask exclusion list"
+    else
+        # Get current formula exclusions
+        local current=$(grep "^EXCLUDED_FORMULAE=" "$config_file" | sed 's/^EXCLUDED_FORMULAE="//' | sed 's/"$//')
+
+        # Remove from list (word-by-word)
+        local new_value=""
+        for word in $current; do
+            if [ "$word" != "$package" ]; then
+                if [ -z "$new_value" ]; then
+                    new_value="$word"
+                else
+                    new_value="$new_value $word"
+                fi
+            fi
+        done
+
+        sed -i.bak "s/^EXCLUDED_FORMULAE=.*/EXCLUDED_FORMULAE=\"$new_value\"/" "$config_file"
+        rm -f "$config_file.bak"
+        echo -e "${GREEN}✓${NC} Removed $package from formula exclusion list"
+    fi
+}
+
+cmd_exclude_list() {
+    local config_file="$HOME/.config/hushbrew/config"
+
+    echo -e "${BLUE}Exclusion list:${NC}"
+    echo ""
+
+    local formulae=$(grep "^EXCLUDED_FORMULAE=" "$config_file" | sed 's/^EXCLUDED_FORMULAE="//' | sed 's/"$//')
+    local casks=$(grep "^EXCLUDED_CASKS=" "$config_file" | sed 's/^EXCLUDED_CASKS="//' | sed 's/"$//')
+
+    echo -e "${BLUE}Formulae:${NC}"
+    if [ -z "$formulae" ]; then
+        echo "  (none)"
+    else
+        for pkg in $formulae; do
+            echo "  - $pkg"
+        done
+    fi
+
+    echo ""
+    echo -e "${BLUE}Casks:${NC}"
+    if [ -z "$casks" ]; then
+        echo "  (none)"
+    else
+        for pkg in $casks; do
+            echo "  - $pkg"
+        done
+    fi
+}
+
+cmd_schedule() {
+    local plist_file="$HOME/Library/LaunchAgents/com.local.hushbrew.plist"
+
+    if [ ! -f "$plist_file" ]; then
+        echo -e "${RED}Error: LaunchAgent plist not found${NC}" >&2
+        echo "Run: hushbrew setup" >&2
+        exit 1
+    fi
+
+    case "${1:-}" in
+        set)
+            shift
+            cmd_schedule_set "$@"
+            ;;
+        "")
+            cmd_schedule_show
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown schedule command: $1${NC}" >&2
+            echo "Usage: hushbrew schedule [set HH:MM HH:MM HH:MM]" >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_schedule_show() {
+    local plist_file="$HOME/Library/LaunchAgents/com.local.hushbrew.plist"
+
+    echo -e "${BLUE}Current schedule:${NC}"
+    echo ""
+
+    # Extract hours from plist
+    local hours=$(plutil -extract StartCalendarInterval xml1 -o - "$plist_file" | grep -A1 "<key>Hour</key>" | grep "<integer>" | sed 's/.*<integer>\([0-9]*\)<\/integer>/\1/')
+
+    local count=1
+    for hour in $hours; do
+        printf "  Slot %d: %02d:00\n" $count $hour
+        count=$((count + 1))
+    done
+
+    echo ""
+    echo "To change: hushbrew schedule set HH:MM HH:MM HH:MM"
+}
+
+cmd_schedule_set() {
+    local plist_file="$HOME/Library/LaunchAgents/com.local.hushbrew.plist"
+
+    if [ $# -ne 3 ]; then
+        echo -e "${RED}Error: Exactly 3 time slots required${NC}" >&2
+        echo "Usage: hushbrew schedule set HH:MM HH:MM HH:MM" >&2
+        echo "Example: hushbrew schedule set 09:00 14:00 18:00" >&2
+        exit 1
+    fi
+
+    # Parse and validate times
+    local -a hours
+    local -a minutes
+
+    for time in "$@"; do
+        if ! [[ "$time" =~ ^[0-9]{1,2}:[0-9]{2}$ ]]; then
+            echo -e "${RED}Error: Invalid time format: $time${NC}" >&2
+            echo "Use HH:MM format (e.g., 09:00)" >&2
+            exit 1
+        fi
+
+        local hour=$(echo "$time" | cut -d: -f1)
+        local minute=$(echo "$time" | cut -d: -f2)
+
+        # Remove leading zeros for validation
+        hour=$((10#$hour))
+        minute=$((10#$minute))
+
+        if [ "$hour" -lt 0 ] || [ "$hour" -gt 23 ]; then
+            echo -e "${RED}Error: Invalid hour: $hour (must be 0-23)${NC}" >&2
+            exit 1
+        fi
+
+        if [ "$minute" -lt 0 ] || [ "$minute" -gt 59 ]; then
+            echo -e "${RED}Error: Invalid minute: $minute (must be 0-59)${NC}" >&2
+            exit 1
+        fi
+
+        hours+=("$hour")
+        minutes+=("$minute")
+    done
+
+    # Check if service is running
+    local was_running=false
+    if launchctl list 2>/dev/null | grep -q "com.local.hushbrew"; then
+        was_running=true
+        echo -e "${BLUE}Stopping service...${NC}"
+        launchctl bootout "gui/$(id -u)/com.local.hushbrew" 2>/dev/null || true
+    fi
+
+    # Create new plist with updated schedule
+    cat > "$plist_file" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.local.hushbrew</string>
+
+  <key>Program</key>
+  <string>$HOME/.local/bin/hushbrew.sh</string>
+
+  <key>WorkingDirectory</key>
+  <string>$HOME</string>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key>
+      <integer>${hours[0]}</integer>
+      <key>Minute</key>
+      <integer>${minutes[0]}</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>
+      <integer>${hours[1]}</integer>
+      <key>Minute</key>
+      <integer>${minutes[1]}</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>
+      <integer>${hours[2]}</integer>
+      <key>Minute</key>
+      <integer>${minutes[2]}</integer>
+    </dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>$HOME/.local/log/hushbrew.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>$HOME/.local/log/hushbrew.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>LowPriorityBackgroundIO</key>
+  <true/>
+
+  <key>LowPriorityIO</key>
+  <true/>
+
+  <key>Nice</key>
+  <integer>15</integer>
+</dict>
+</plist>
+EOF
+
+    echo -e "${GREEN}✓${NC} Updated schedule to: ${hours[0]}:${minutes[0]}, ${hours[1]}:${minutes[1]}, ${hours[2]}:${minutes[2]}"
+
+    # Restart service if it was running
+    if $was_running; then
+        echo -e "${BLUE}Restarting service...${NC}"
+        launchctl bootstrap "gui/$(id -u)" "$plist_file" 2>/dev/null
+        echo -e "${GREEN}✓${NC} Service restarted"
+    else
+        echo ""
+        echo "Run 'hushbrew start' to activate the new schedule"
+    fi
+}
+
+cmd_test() {
+    echo -e "${BLUE}Testing hushbrew environment...${NC}"
+    echo ""
+
+    # Find brew
+    local BREW=""
+    if [ -x "/opt/homebrew/bin/brew" ]; then
+        BREW="/opt/homebrew/bin/brew"
+    elif [ -x "/usr/local/bin/brew" ]; then
+        BREW="/usr/local/bin/brew"
+    else
+        BREW=$(command -v brew 2>/dev/null || echo "")
+    fi
+
+    if [ -z "$BREW" ]; then
+        echo -e "${RED}✗${NC} Homebrew not found"
+        exit 1
+    else
+        echo -e "${GREEN}✓${NC} Homebrew found: $BREW"
+    fi
+
+    # Test meeting detection
+    echo ""
+    echo -e "${BLUE}Meeting detection:${NC}"
+
+    local blocked_by=""
+
+    # Check Zoom
+    if pgrep -x "CptHost" > /dev/null 2>&1; then
+        blocked_by="Zoom meeting (CptHost)"
+    fi
+
+    # Check Zoom UDP
+    if [ -z "$blocked_by" ] && lsof -c zoom.us -a -i UDP 2>/dev/null | grep -q "."; then
+        blocked_by="Zoom meeting (UDP streams)"
+    fi
+
+    # Check Slack huddle
+    if [ -z "$blocked_by" ]; then
+        local slack_udp=$(lsof -c Slack -a -i UDP 2>/dev/null | grep -v ":https" || true)
+        if [ -n "$slack_udp" ]; then
+            blocked_by="Slack huddle"
+        fi
+    fi
+
+    # Check microphone
+    if [ -z "$blocked_by" ] && ioreg -c AppleHDAEngineInput 2>/dev/null | grep -q "IOAudioEngineState = 1"; then
+        blocked_by="Microphone in use"
+    fi
+
+    if [ -n "$blocked_by" ]; then
+        echo -e "${YELLOW}⚠${NC} Blocked: $blocked_by"
+    else
+        echo -e "${GREEN}✓${NC} No meetings detected"
+    fi
+
+    # Test power status
+    echo ""
+    echo -e "${BLUE}Power status:${NC}"
+
+    local power_output=$(pmset -g batt 2>/dev/null || echo "")
+    if [ -z "$power_output" ]; then
+        echo -e "${YELLOW}⚠${NC} Cannot read power status"
+    else
+        local on_ac=false
+        local battery_pct=""
+
+        if echo "$power_output" | grep -q "AC Power"; then
+            on_ac=true
+        fi
+
+        battery_pct=$(echo "$power_output" | grep -Eo "[0-9]+%" | sed 's/%//' | head -1 || echo "")
+
+        if $on_ac; then
+            echo -e "${GREEN}✓${NC} On AC power"
+        elif [ -n "$battery_pct" ]; then
+            echo "  Battery: ${battery_pct}%"
+            if [ "$battery_pct" -lt 15 ]; then
+                echo -e "${YELLOW}⚠${NC} Battery below 15% - would skip upgrade"
+            else
+                echo -e "${GREEN}✓${NC} Battery above 15% - would proceed"
+            fi
+        fi
+    fi
+
+    # Test bandwidth
+    echo ""
+    echo -e "${BLUE}Bandwidth detection:${NC}"
+    echo "  Testing download speed (2MB test file)..."
+
+    local start_time=$(date +%s)
+    if curl -sS --max-time 10 -o /dev/null https://speed.cloudflare.com/__down?bytes=2000000 2>/dev/null; then
+        local end_time=$(date +%s)
+        local elapsed=$((end_time - start_time))
+
+        if [ "$elapsed" -gt 0 ]; then
+            local speed_mbps=$((2000000 / elapsed / 1024 / 1024))
+            local limit_mbps=$((speed_mbps * 60 / 100))
+            if [ "$limit_mbps" -lt 1 ]; then
+                limit_mbps=1
+            fi
+
+            echo -e "${GREEN}✓${NC} Detected ~${speed_mbps}MB/s"
+            echo "  Would limit brew to ${limit_mbps}MB/s (60%)"
+        else
+            echo -e "${YELLOW}⚠${NC} Very fast connection, could not measure accurately"
+        fi
+    else
+        echo -e "${YELLOW}⚠${NC} Bandwidth test failed or timed out"
+    fi
+
+    echo ""
+    echo -e "${GREEN}Test complete!${NC}"
+}
+
+cmd_dry_run() {
+    echo -e "${BLUE}Checking for available upgrades...${NC}"
+    echo ""
+
+    # Find brew
+    local BREW=""
+    if [ -x "/opt/homebrew/bin/brew" ]; then
+        BREW="/opt/homebrew/bin/brew"
+    elif [ -x "/usr/local/bin/brew" ]; then
+        BREW="/usr/local/bin/brew"
+    else
+        BREW=$(command -v brew 2>/dev/null || echo "")
+    fi
+
+    if [ -z "$BREW" ]; then
+        echo -e "${RED}Error: Homebrew not found${NC}" >&2
+        exit 1
+    fi
+
+    # Load config for exclusions
+    local EXCLUDED_FORMULAE=""
+    local EXCLUDED_CASKS=""
+    if [ -f "$HOME/.config/hushbrew/config" ]; then
+        source "$HOME/.config/hushbrew/config"
+    fi
+
+    # Check outdated formulae
+    echo -e "${BLUE}Formulae:${NC}"
+    local outdated_formulae=$("$BREW" outdated --formula --quiet 2>/dev/null || true)
+
+    if [ -z "$outdated_formulae" ]; then
+        echo "  (none)"
+    else
+        for pkg in $outdated_formulae; do
+            # Check if excluded
+            if echo "$EXCLUDED_FORMULAE" | grep -qw "$pkg"; then
+                echo "  - $pkg ${YELLOW}(excluded)${NC}"
+            else
+                echo "  - $pkg"
+            fi
+        done
+    fi
+
+    # Check outdated casks
+    echo ""
+    echo -e "${BLUE}Casks:${NC}"
+    local outdated_casks=$("$BREW" outdated --cask --greedy --quiet 2>/dev/null || true)
+
+    if [ -z "$outdated_casks" ]; then
+        echo "  (none)"
+    else
+        for pkg in $outdated_casks; do
+            # Check if excluded
+            if echo "$EXCLUDED_CASKS" | grep -qw "$pkg"; then
+                echo "  - $pkg ${YELLOW}(excluded)${NC}"
+            else
+                echo "  - $pkg"
+            fi
+        done
+    fi
+
+    echo ""
+    echo "This is a dry-run. No packages were upgraded."
+    echo "Run 'hushbrew run' to perform actual upgrades."
+}
+
 cmd_help() {
     cat <<EOF
 hushbrew v${VERSION} - Automatic Homebrew upgrades for macOS
 
 Usage:
-  hushbrew start          Start the service (runs setup if needed)
-  hushbrew stop           Stop the service
-  hushbrew status         Show service status
-  hushbrew logs [-f]      View logs (-f to follow)
-  hushbrew run            Run upgrade manually
-  hushbrew setup          Run setup manually (usually not needed)
-  hushbrew help           Show this help
-  hushbrew version        Show version
+  hushbrew start              Start the service (runs setup if needed)
+  hushbrew stop               Stop the service and remove files
+  hushbrew status             Show service status
+  hushbrew logs [OPTIONS]     View logs
+  hushbrew run                Run upgrade manually
+  hushbrew setup              Run setup manually (usually not needed)
+
+  hushbrew config [edit]      Show or edit configuration
+  hushbrew config set KEY VAL Set configuration value
+
+  hushbrew exclude add PKG    Add package to exclusion list
+  hushbrew exclude remove PKG Remove from exclusion list
+  hushbrew exclude list       Show excluded packages
+
+  hushbrew schedule           Show current schedule
+  hushbrew schedule set ...   Set schedule times
+
+  hushbrew test               Test environment (meeting/power/bandwidth)
+  hushbrew dry-run            Show what would be upgraded
+
+  hushbrew help               Show this help
+  hushbrew version            Show version
+
+Log Options:
+  -f, --follow                Follow log output
+  --clear                     Clear all logs
+  --last                      Show last run only
+
+Config Settings:
+  bandwidth-limit <1-100>     Bandwidth throttle percentage (default: 60)
+  battery-threshold <1-100>   Battery threshold percentage (default: 15)
+  meeting-check <on|off>      Toggle meeting detection (default: on)
+
+Exclusion Examples:
+  hushbrew exclude add node                 Exclude node formula
+  hushbrew exclude add --cask docker-desktop  Exclude cask
+  hushbrew exclude remove node              Remove exclusion
+
+Schedule Example:
+  hushbrew schedule set 09:00 14:00 18:00   Change to 9 AM, 2 PM, 6 PM
 
 Quick Start:
-  brew install sandeepyadav1478/hushbrew/hushbrew
+  brew tap sandeepyadav1478/hushbrew
+  brew install hushbrew
   hushbrew start
 
 Features:
-  • Runs at 10 AM, 2 PM, 6 PM daily
+  • Runs at 10 AM, 2 PM, 6 PM daily (customizable)
   • Meeting-aware (Zoom, Slack, mic detection)
   • Power-aware (skips if battery <15%)
   • Bandwidth throttling (60% of detected speed)
 
-Configuration:
-  Edit ~/.config/hushbrew/config to exclude packages
-
 Documentation:
-  https://github.com/sandeepyadav1478/hushbrew
+  https://github.com/sandeepyadav1478/homebrew-hushbrew
 EOF
 }
 
@@ -259,6 +965,24 @@ case "${1:-}" in
         ;;
     run)
         cmd_run
+        ;;
+    config)
+        shift
+        cmd_config "$@"
+        ;;
+    exclude)
+        shift
+        cmd_exclude "$@"
+        ;;
+    schedule)
+        shift
+        cmd_schedule "$@"
+        ;;
+    test)
+        cmd_test
+        ;;
+    dry-run)
+        cmd_dry_run
         ;;
     help|--help|-h)
         cmd_help
