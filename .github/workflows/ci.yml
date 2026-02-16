@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          shellcheck bin/hushbrew.sh
+          shellcheck bin/brew-curl
+          shellcheck install.sh
+          shellcheck uninstall.sh
+
+  plist-lint:
+    name: Validate plist
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate plist XML
+        run: plutil -lint launchd/com.local.hushbrew.plist

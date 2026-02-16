@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+
+# IDE / editor directories
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Claude Code local state
+.claude/todos.json
+.claude/settings.local.json
+
+# Homebrew testing artifacts
+*.tar.gz
+*.bottle.tar.gz
+hushbrew-*.tar.gz

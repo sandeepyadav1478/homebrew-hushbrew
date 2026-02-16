@@ -1,0 +1,13 @@
+#!/bin/bash
+#
+# Curl wrapper for brew — applies bandwidth limit from BREW_RATE_LIMIT env var.
+# Falls back to unlimited if BREW_RATE_LIMIT is not set.
+#
+
+REAL_CURL="/usr/bin/curl"
+
+if [ -n "$BREW_RATE_LIMIT" ]; then
+    exec "$REAL_CURL" --limit-rate "${BREW_RATE_LIMIT}" "$@"
+else
+    exec "$REAL_CURL" "$@"
+fi

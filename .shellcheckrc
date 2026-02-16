@@ -1,0 +1,9 @@
+# ShellCheck configuration for hushbrew
+# https://www.shellcheck.net/wiki/
+
+# We intentionally word-split $formulae_to_upgrade etc.
+# These are space-separated lists passed as multiple args to brew.
+disable=SC2086
+
+# Source paths are dynamic ($CONFIG), can't follow
+disable=SC1090
