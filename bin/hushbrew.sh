@@ -312,16 +312,21 @@ if $update_ok; then
     # Apply leaves-only filtering if configured
     if [ "$UPGRADE_STRATEGY" = "leaves" ]; then
         log "INFO: Using leaves-only upgrade strategy"
-        leaves=$("$BREW" leaves 2>/dev/null || true)
+        leaves=$(nice -n 15 timeout 60 "$BREW" leaves 2>/dev/null || true)
 
-        # Filter outdated to only include leaves
-        filtered_formulae=""
-        for formula in $outdated_formulae; do
-            if echo "$leaves" | grep -qw "$formula"; then
-                filtered_formulae="$filtered_formulae $formula"
-            fi
-        done
-        outdated_formulae=$(echo "$filtered_formulae" | xargs)
+        # Fallback to "all" if brew leaves failed or returned empty
+        if [ -z "$leaves" ]; then
+            log "WARN: brew leaves returned empty or timed out — falling back to all strategy"
+        else
+            # Filter outdated to only include leaves
+            filtered_formulae=""
+            for formula in $outdated_formulae; do
+                if echo "$leaves" | grep -qw "$formula"; then
+                    filtered_formulae="$filtered_formulae $formula"
+                fi
+            done
+            outdated_formulae=$(echo "$filtered_formulae" | xargs)
+        fi
     fi
 
     formulae_to_upgrade=$(filter_excluded "$outdated_formulae" "$EXCLUDED_FORMULAE")
@@ -348,7 +353,7 @@ if $update_ok; then
 fi
 
 # ══════════════════════════════════════════════════════════════
-#  Step 3 — Upgrade casks (15 min timeout)
+#  Step 3 — Upgrade casks (30 min timeout)
 # ══════════════════════════════════════════════════════════════
 
 if $update_ok; then
@@ -370,12 +375,12 @@ if $update_ok; then
 
         log "INFO: Upgrading casks: $casks_to_upgrade"
         set +e  # Temporarily disable exit-on-error to capture exit code
-        run_with_timeout 900 "$BREW" upgrade --cask $casks_to_upgrade
+        run_with_timeout 1800 "$BREW" upgrade --cask $casks_to_upgrade
         cask_exit=$?
         set -e  # Re-enable exit-on-error
 
         if [ "$cask_exit" -eq 124 ]; then
-            add_error "Cask upgrade timed out (15 min)"
+            add_error "Cask upgrade timed out (30 min)"
         elif [ "$cask_exit" -ne 0 ]; then
             add_error "Cask upgrade failed (exit $cask_exit) — may need sudo or app restart"
         fi
