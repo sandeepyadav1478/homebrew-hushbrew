@@ -59,15 +59,6 @@ class Hushbrew < Formula
     EOS
   end
 
-  # Note: Use 'hushbrew start' instead of 'brew services start' for calendar-based scheduling
-  service do
-    run opt_libexec/"hushbrew.sh"
-    working_dir Dir.home
-    keep_alive false
-    log_path var/"log/hushbrew.log"
-    error_log_path var/"log/hushbrew.log"
-  end
-
   def post_uninstall
     # Stop and unload the LaunchAgent
     quiet_system "launchctl", "bootout", "gui/#{Process.uid}/com.local.hushbrew"
