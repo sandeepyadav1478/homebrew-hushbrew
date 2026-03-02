@@ -5,8 +5,8 @@
 class Hushbrew < Formula
   desc "Automatic daily Homebrew upgrades for macOS that stay out of your way"
   homepage "https://github.com/sandeepyadav1478/homebrew-hushbrew"
-  url "https://github.com/sandeepyadav1478/homebrew-hushbrew/archive/refs/tags/v1.2.0.tar.gz"
-  sha256 "d2eb4a7cbf0581912fa52031ef7c870f90ae75c607ad74c6cd00857d021313c3"
+  url "https://github.com/sandeepyadav1478/homebrew-hushbrew/archive/refs/tags/v1.2.1.tar.gz"
+  sha256 "282680925346802098d3b15815e6b8639b6ae31e242bdf113ddca059dcd70fbe"
   license "MIT"
   head "https://github.com/sandeepyadav1478/homebrew-hushbrew.git", branch: "main"
 
