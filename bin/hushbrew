@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 
 # Colors for output
 RED='\033[0;31m'
@@ -61,8 +61,8 @@ cmd_start() {
     echo -e "${BLUE}Starting hushbrew...${NC}"
 
     # Use our custom plist with calendar-based scheduling (not brew services)
-    launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.local.hushbrew.plist" 2>/dev/null
-    load_exit=$?
+    load_exit=0
+    launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.local.hushbrew.plist" 2>/dev/null || load_exit=$?
 
     if [ $load_exit -eq 0 ]; then
         echo -e "${GREEN}✓ hushbrew started${NC}"
@@ -74,7 +74,7 @@ cmd_start() {
         echo "  hushbrew status  - Check status"
         echo "  hushbrew logs    - View logs"
         echo "  hushbrew stop    - Stop service"
-    elif [ $load_exit -eq 37 ] || [ $load_exit -eq 17 ]; then
+    elif [ $load_exit -eq 37 ] || [ $load_exit -eq 17 ] || [ $load_exit -eq 5 ]; then
         echo -e "${YELLOW}Already running${NC}"
     else
         echo -e "${RED}Failed to start (exit code: $load_exit)${NC}" >&2
