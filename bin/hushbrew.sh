@@ -219,6 +219,7 @@ export PATH="$BREW_PREFIX/bin:$BREW_PREFIX/sbin:/usr/local/bin:/usr/bin:/bin:/us
 export HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK=1
 export HOMEBREW_NO_INSTALL_CLEANUP=1
 export HOMEBREW_NO_ENV_HINTS=1
+export ACCEPT_EULA=Y
 
 # Detect bandwidth and set rate limit for brew's curl
 export BREW_RATE_LIMIT
@@ -256,6 +257,8 @@ filter_excluded() {
 
 # ── Step tracking ──
 step_errors=""
+formulae_to_upgrade=""
+casks_to_upgrade=""
 add_error() {
     if [ -n "$step_errors" ]; then
         step_errors="$step_errors | $1"
@@ -405,31 +408,33 @@ notify() {
     osascript -e "display notification \"$message\" sound name \"Glass\" with title \"$title\"" 2>/dev/null || true
 }
 
-# V1. Check for formulae that are still outdated (shouldn't be)
-still_outdated_formulae=$("$BREW" outdated --formula --quiet 2>/dev/null || true)
-failed_formulae=$(filter_excluded "$still_outdated_formulae" "$EXCLUDED_FORMULAE")
-if [ -n "$failed_formulae" ]; then
+# V1. Check for formulae that are still outdated (only those we attempted)
+if [ -n "$formulae_to_upgrade" ]; then
+    still_outdated_formulae=$("$BREW" outdated --formula --quiet 2>/dev/null || true)
     pinned=$("$BREW" list --pinned 2>/dev/null || true)
-    for f in $failed_formulae; do
-        reason="unknown"
-        if echo "$pinned" | grep -qw "$f"; then
-            reason="pinned"
+    for f in $formulae_to_upgrade; do
+        if echo "$still_outdated_formulae" | grep -qw "$f"; then
+            reason="unknown"
+            if echo "$pinned" | grep -qw "$f"; then
+                reason="pinned"
+            fi
+            add_error "Formula still outdated: $f ($reason)"
         fi
-        add_error "Formula still outdated: $f ($reason)"
     done
 fi
 
-# V2. Check for casks that are still outdated (shouldn't be)
-still_outdated_casks=$("$BREW" outdated --cask --greedy --quiet 2>/dev/null || true)
-failed_casks=$(filter_excluded "$still_outdated_casks" "$EXCLUDED_CASKS")
-if [ -n "$failed_casks" ]; then
-    for c in $failed_casks; do
-        reason="unknown"
-        app_name=$("$BREW" info --cask "$c" 2>/dev/null | grep "\.app" | head -1 | sed 's/.*(\(.*\.app\)).*/\1/' | sed 's/\.app$//' || true)
-        if [ -n "$app_name" ] && pgrep -xq "$app_name" 2>/dev/null; then
-            reason="app is running"
+# V2. Check for casks that are still outdated (only those we attempted)
+if [ -n "$casks_to_upgrade" ]; then
+    still_outdated_casks=$("$BREW" outdated --cask --greedy --quiet 2>/dev/null || true)
+    for c in $casks_to_upgrade; do
+        if echo "$still_outdated_casks" | grep -qw "$c"; then
+            reason="unknown"
+            app_name=$("$BREW" info --cask "$c" 2>/dev/null | grep "\.app" | head -1 | sed 's/.*(\(.*\.app\)).*/\1/' | sed 's/\.app$//' || true)
+            if [ -n "$app_name" ] && pgrep -xq "$app_name" 2>/dev/null; then
+                reason="app is running"
+            fi
+            add_error "Cask still outdated: $c ($reason)"
         fi
-        add_error "Cask still outdated: $c ($reason)"
     done
 fi
 
