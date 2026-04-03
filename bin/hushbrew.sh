@@ -219,7 +219,7 @@ export PATH="$BREW_PREFIX/bin:$BREW_PREFIX/sbin:/usr/local/bin:/usr/bin:/bin:/us
 export HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK=1
 export HOMEBREW_NO_INSTALL_CLEANUP=1
 export HOMEBREW_NO_ENV_HINTS=1
-export ACCEPT_EULA=Y
+export HOMEBREW_ACCEPT_EULA=Y
 
 # Detect bandwidth and set rate limit for brew's curl
 export BREW_RATE_LIMIT
